@@ -1,0 +1,86 @@
+services:
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: cloudfloe-frontend
+    ports:
+      - "3000:80"
+    environment:
+      - NODE_ENV=development
+    restart: unless-stopped
+    networks:
+      - cloudfloe-network
+
+  minio:
+    image: minio/minio:latest
+    container_name: cloudfloe-minio
+    ports:
+      - "9000:9000"    # S3 API
+      - "9001:9001"    # MinIO Console
+    environment:
+      - MINIO_ROOT_USER=cloudfloe
+      - MINIO_ROOT_PASSWORD=cloudfloe123
+    command: server /data --console-address ":9001"
+    volumes:
+      - minio_data:/data
+    restart: unless-stopped
+    networks:
+      - cloudfloe-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+
+  # Initialize sample Iceberg data in MinIO
+  init-data:
+    image: python:3.11-slim
+    container_name: cloudfloe-init-data
+    volumes:
+      - ./scripts:/scripts
+      - ./sample_data:/sample_data:ro
+    environment:
+      - MINIO_ENDPOINT=http://minio:9000
+      - MINIO_ACCESS_KEY=cloudfloe
+      - MINIO_SECRET_KEY=cloudfloe123
+    depends_on:
+      minio:
+        condition: service_healthy
+    networks:
+      - cloudfloe-network
+    command: >
+      bash -c "
+      echo 'Installing dependencies...' &&
+      pip install --no-cache-dir boto3 &&
+      echo 'Uploading sample data to MinIO...' &&
+      python /scripts/upload_sample_data.py /sample_data
+      "
+    restart: "no"
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: cloudfloe-backend
+    ports:
+      - "8000:8000"
+    environment:
+      - MINIO_ENDPOINT=minio:9000
+      - MINIO_ACCESS_KEY=cloudfloe
+      - MINIO_SECRET_KEY=cloudfloe123
+    depends_on:
+      minio:
+        condition: service_healthy
+      init-data:
+        condition: service_completed_successfully
+    restart: unless-stopped
+    networks:
+      - cloudfloe-network
+
+networks:
+  cloudfloe-network:
+    driver: bridge
+
+volumes:
+  minio_data:

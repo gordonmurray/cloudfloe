@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cloudfloe - Query Your Iceberg Lake</title>
+    <link rel="stylesheet" href="/css/style.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/codemirror.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/theme/monokai.min.css">
+</head>
+<body>
+    <header>
+        <div class="header-container">
+            <div class="logo">
+                <span class="logo-icon">🌊</span>
+                <span class="logo-text">Cloudfloe</span>
+            </div>
+            <div class="header-actions">
+            </div>
+        </div>
+    </header>
+
+    <div class="container">
+        <aside class="sidebar">
+            <div class="connection-panel">
+                <h3>Connection</h3>
+
+                <div class="form-group">
+                    <label for="storageType">Storage Type</label>
+                    <select id="storageType">
+                        <option value="s3">AWS S3</option>
+                        <option value="r2">Cloudflare R2</option>
+                        <option value="minio">MinIO</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label for="endpoint">Endpoint</label>
+                    <input type="text" id="endpoint" placeholder="s3://bucket/path or R2 endpoint">
+                </div>
+
+                <div class="form-group">
+                    <label for="accessKey">Access Key</label>
+                    <input type="password" id="accessKey" placeholder="Access Key ID">
+                </div>
+
+                <div class="form-group">
+                    <label for="secretKey">Secret Key</label>
+                    <input type="password" id="secretKey" placeholder="Secret Access Key">
+                </div>
+
+                <div class="form-group" id="sessionTokenGroup" style="display: none;">
+                    <label for="sessionToken">Session Token (STS)</label>
+                    <input type="password" id="sessionToken" placeholder="Optional for temporary credentials">
+                </div>
+
+                <div class="form-group">
+                    <label for="region">Region</label>
+                    <input type="text" id="region" placeholder="eu-west-1" value="eu-west-1">
+                </div>
+
+                <button id="testConnectionBtn" class="btn btn-primary btn-block">Test Connection</button>
+
+                <div id="connectionStatus" class="status-message"></div>
+
+                <div class="saved-connections">
+                    <h4>Recent Connections</h4>
+                    <div id="recentConnectionsList" class="recent-list"></div>
+                </div>
+            </div>
+        </aside>
+
+        <main class="main-content">
+            <div class="editor-container">
+                <div class="editor-toolbar">
+                    <button id="runQueryBtn" class="btn btn-primary">
+                        <span class="btn-icon">▶</span> Run Query
+                    </button>
+                    <button id="formatBtn" class="btn btn-secondary">Format SQL</button>
+                    <span class="query-status" id="queryStatus"></span>
+                </div>
+                <div id="sqlEditor"></div>
+            </div>
+
+            <div class="results-container">
+                <div class="results-header">
+                    <div class="results-tabs">
+                        <button class="tab-btn active" data-tab="results">Results</button>
+                        <button class="tab-btn" data-tab="stats">Query Stats</button>
+                    </div>
+                    <div class="results-actions">
+                        <span id="rowCount" class="row-count"></span>
+                        <button id="exportBtn" class="btn btn-small">Export CSV</button>
+                    </div>
+                </div>
+
+                <div class="tab-content" id="resultsTab">
+                    <div id="resultsTable" class="results-table">
+                        <div class="empty-state">
+                            <p>Run a query to see results</p>
+                            <p class="hint">Try: SELECT * FROM iceberg_scan('your-table-path') LIMIT 10</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="tab-content" id="statsTab" style="display: none;">
+                    <div class="stats-grid">
+                        <div class="stat-card">
+                            <div class="stat-label">Execution Time</div>
+                            <div class="stat-value" id="execTime">-</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-label">Bytes Scanned</div>
+                            <div class="stat-value" id="bytesScanned">-</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-label">Estimated Cost</div>
+                            <div class="stat-value" id="estCost">-</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-label">Rows Returned</div>
+                            <div class="stat-value" id="rowsReturned">-</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+
+        <aside class="right-sidebar">
+            <div class="query-library">
+                <h3>Sample Queries</h3>
+                <div class="sample-queries" id="sampleQueries">
+                    <div class="query-card" data-query="SELECT primaryTitle, startYear, runtimeMinutes, genres FROM read_parquet('s3://movies/data/**/*.parquet') WHERE titleType = 'movie' ORDER BY startYear DESC LIMIT 10">
+                        <div class="query-title">Sample Movies</div>
+                        <div class="query-desc">Preview first 10 movies</div>
+                    </div>
+                    <div class="query-card" data-query="SELECT COUNT(*) as total_movies FROM read_parquet('s3://movies/data/**/*.parquet')">
+                        <div class="query-title">Row Count</div>
+                        <div class="query-desc">Count total rows in dataset</div>
+                    </div>
+                    <div class="query-card" data-query="SELECT decade, COUNT(*) as movie_count, AVG(runtimeMinutes) as avg_runtime FROM read_parquet('s3://movies/data/**/*.parquet') WHERE titleType = 'movie' AND runtimeMinutes IS NOT NULL GROUP BY decade ORDER BY decade DESC">
+                        <div class="query-title">Movies by Decade</div>
+                        <div class="query-desc">Count movies by decade with avg runtime</div>
+                    </div>
+                    <div class="query-card" data-query="SELECT primaryTitle, startYear, runtimeMinutes FROM read_parquet('s3://movies/data/**/*.parquet') WHERE titleType = 'movie' AND runtimeMinutes > 180 ORDER BY runtimeMinutes DESC LIMIT 10">
+                        <div class="query-title">Long Movies</div>
+                        <div class="query-desc">Find movies over 3 hours</div>
+                    </div>
+                    <div class="query-card" data-query="SELECT TRIM(genre) as genre, COUNT(*) as count FROM (SELECT UNNEST(string_split(genres, ',')) as genre FROM read_parquet('s3://movies/data/**/*.parquet') WHERE titleType = 'movie' AND genres IS NOT NULL) GROUP BY genre ORDER BY count DESC LIMIT 10">
+                        <div class="query-title">Popular Genres</div>
+                        <div class="query-desc">Most common movie genres</div>
+                    </div>
+                </div>
+
+                <h3>Query History</h3>
+                <div class="query-history" id="queryHistory"></div>
+            </div>
+        </aside>
+    </div>
+
+    <footer>
+        <div class="footer-content">
+            <span class="footer-status" id="footerStatus">Ready</span>
+        </div>
+    </footer>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/codemirror.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/mode/sql/sql.min.js"></script>
+    <script src="/js/app.js"></script>
+</body>
+</html>
