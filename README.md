@@ -75,13 +75,9 @@ We’re building in the open — feedback, ideas, and contributors are welcome!
 ## 💬 Join the Conversation
 
 - GitHub Issues → feature requests & feedback  
-- Discussions → share your use cases  
-- Twitter / LinkedIn (coming soon) → announcements  
+- Discussions → share your use cases   
 
 ---
 
 **Cloudfloe**  
 *The fastest way to query your Iceberg data lake.*
-
-
-Would you like me to also **draft a leaner GitHub-style tagline + description** (those two little bits that show up at the very top of a repo page) so it hooks people *before* they even scroll into the README?
