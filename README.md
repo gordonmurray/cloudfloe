@@ -2,6 +2,8 @@
 
 **Query your Iceberg data lake in seconds. No clusters. No ops. Just SQL.**
 
+![Cloudfloe Screenshot](images/cloudfloe_scrrenshot.png)
+
 ## ⚡ The Problem
 
 You have data in Apache Iceberg. You just want to **query it**.
