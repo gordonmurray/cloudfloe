@@ -35,3 +35,5 @@ Thumbs.db
 # Logs
 *.log
 query_profile.json
+
+/real_sample_data/

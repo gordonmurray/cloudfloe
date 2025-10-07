@@ -100,7 +100,8 @@ class CloudfloeApp {
             accessKey: document.getElementById('accessKey').value,
             secretKey: document.getElementById('secretKey').value,
             sessionToken: document.getElementById('sessionToken').value,
-            region: document.getElementById('region').value
+            region: document.getElementById('region').value,
+            tablePath: document.getElementById('tablePath').value
         };
 
         const statusDiv = document.getElementById('connectionStatus');
@@ -121,9 +122,16 @@ class CloudfloeApp {
                 });
 
                 if (response.ok) {
+                    const data = await response.json();
                     this.currentConnection = connection;
                     statusDiv.innerHTML = '<div class="status-message status-success">✓ Connection successful</div>';
                     this.addRecentConnection(connection);
+
+                    // If we got table info, show it in the editor
+                    if (data.tableInfo && data.tableInfo.suggestedQuery) {
+                        this.editor.setValue(data.tableInfo.suggestedQuery);
+                        statusDiv.innerHTML += `<div style="margin-top: 0.5rem; color: #10b981; font-size: 0.875rem;">Table found: ${data.tableInfo.path}<br>Sample query loaded in editor</div>`;
+                    }
                 } else {
                     throw new Error('Connection failed');
                 }
@@ -181,7 +189,6 @@ class CloudfloeApp {
             this.updateStats({
                 execTime: stats.executionTimeMs ? `${stats.executionTimeMs}ms` : `${endTime - startTime}ms`,
                 bytesScanned: this.formatBytes(stats.bytesScanned || results.bytesScanned || 1024000),
-                estCost: `$${(stats.estimatedCost || 0.005).toFixed(4)}`,
                 rowsReturned: stats.rowsReturned || results.rows?.length || 0
             });
 
@@ -262,7 +269,6 @@ class CloudfloeApp {
     updateStats(stats) {
         document.getElementById('execTime').textContent = stats.execTime;
         document.getElementById('bytesScanned').textContent = stats.bytesScanned;
-        document.getElementById('estCost').textContent = stats.estCost;
         document.getElementById('rowsReturned').textContent = stats.rowsReturned;
     }
 

@@ -29,6 +29,12 @@ class ConnectionConfig(BaseModel):
     sessionToken: Optional[str] = Field(None, description="Session token for STS")
     region: str = Field(default="us-east-1", description="Region")
 
+    # Iceberg-specific fields
+    catalogType: Optional[str] = Field(default="none", description="Catalog type: rest, none")
+    catalogEndpoint: Optional[str] = Field(None, description="REST catalog endpoint URL")
+    namespace: Optional[str] = Field(default="default", description="Iceberg namespace/database")
+    tablePath: Optional[str] = Field(None, description="Direct path to Iceberg table root")
+
 
 class TestConnectionRequest(BaseModel):
     connection: ConnectionConfig
@@ -44,7 +50,6 @@ class QueryStats(BaseModel):
     executionTimeMs: int
     bytesScanned: int
     rowsReturned: int
-    estimatedCost: float
 
 
 class QueryResponse(BaseModel):
@@ -71,14 +76,16 @@ class DuckDBManager:
             self.connection.execute("INSTALL httpfs")
             self.connection.execute("LOAD httpfs")
 
-            # Try to install Iceberg extension (may not be available in all versions)
+            # Iceberg extension is mandatory for correct data reads
             try:
                 self.connection.execute("INSTALL iceberg")
                 self.connection.execute("LOAD iceberg")
+                # DuckDB 1.4+ requires explicit version handling
+                self.connection.execute("SET unsafe_enable_version_guessing=true")
                 logger.info("✓ Iceberg extension loaded")
             except Exception as e:
-                logger.warning(f"Iceberg extension not available: {e}")
-                logger.info("Will use direct Parquet reading")
+                logger.error(f"FATAL: Iceberg extension required but not available: {e}")
+                raise RuntimeError("Iceberg extension is required for correct data reads")
 
             # Set default settings
             self.connection.execute("SET memory_limit='2GB'")
@@ -103,6 +110,9 @@ class DuckDBManager:
             # Reinstall extensions for new connection
             self.connection.execute("INSTALL httpfs")
             self.connection.execute("LOAD httpfs")
+            self.connection.execute("INSTALL iceberg")
+            self.connection.execute("LOAD iceberg")
+            self.connection.execute("SET unsafe_enable_version_guessing=true")
 
             # Set default settings
             self.connection.execute("SET memory_limit='2GB'")
@@ -130,35 +140,168 @@ class DuckDBManager:
                 self.connection.execute("SET s3_use_ssl=true")
             else:
                 # AWS S3 configuration
+                logger.info(f"Setting S3 region: {config.region}")
                 self.connection.execute(f"SET s3_region='{config.region}'")
                 self.connection.execute("SET s3_use_ssl=true")
 
             # Set credentials
-            self.connection.execute(f"SET s3_access_key_id='{config.accessKey}'")
-            self.connection.execute(f"SET s3_secret_access_key='{config.secretKey}'")
+            logger.info(f"Setting S3 credentials - Access Key starts with: {config.accessKey[:8] if config.accessKey else 'EMPTY'}...")
+            # Use parameter binding to handle special characters safely
+            self.connection.execute("SET s3_access_key_id=?", [config.accessKey])
+            self.connection.execute("SET s3_secret_access_key=?", [config.secretKey])
 
             if config.sessionToken:
                 self.connection.execute(f"SET s3_session_token='{config.sessionToken}'")
 
             logger.info(f"✓ Applied {config.storageType} configuration")
 
+            # Attach Iceberg catalog if configured
+            self._attach_iceberg_catalog(config)
+
         except Exception as e:
             logger.error(f"Failed to apply S3 config: {e}")
             raise HTTPException(status_code=400, detail=f"Invalid S3 configuration: {e}")
 
+    def _attach_iceberg_catalog(self, config: ConnectionConfig):
+        """Attach Iceberg REST catalog if configured."""
+        if config.catalogType == "rest":
+            if not config.catalogEndpoint:
+                raise HTTPException(
+                    status_code=400,
+                    detail="catalogEndpoint required for REST catalog"
+                )
+
+            logger.info(f"Attaching Iceberg REST catalog: {config.catalogEndpoint}")
+
+            # Create secret for catalog authentication
+            # Note: For now using S3 credentials; extend for OAuth2 later
+            self.connection.execute(f"""
+                CREATE SECRET iceberg_catalog_secret (
+                    TYPE iceberg,
+                    TOKEN '{config.accessKey}:{config.secretKey}'
+                )
+            """)
+
+            # Attach catalog
+            self.connection.execute(f"""
+                ATTACH '{config.namespace}' AS iceberg_catalog (
+                    TYPE iceberg,
+                    SECRET iceberg_catalog_secret,
+                    ENDPOINT '{config.catalogEndpoint}'
+                )
+            """)
+
+            logger.info("✓ Iceberg catalog attached")
+
+    def _validate_iceberg_table(self, table_path: str) -> dict:
+        """
+        Validate Iceberg table compatibility (v1/v2 only, no deletes).
+
+        Returns dict with validation results or raises HTTPException.
+        """
+        try:
+            # Read metadata to check for delete files
+            metadata_query = f"SELECT * FROM iceberg_metadata('{table_path}')"
+            metadata = self.connection.execute(metadata_query).fetchdf()
+
+            # Check for delete files in manifests
+            has_deletes = any('DELETE' in str(v).upper() for v in metadata['manifest_content'].unique())
+
+            if has_deletes:
+                raise HTTPException(
+                    status_code=400,
+                    detail=(
+                        "Table contains row-level deletes which are not supported. "
+                        "This application only supports append-only Iceberg v1/v2 tables. "
+                        "Reading this table may return incorrect data."
+                    )
+                )
+
+            logger.info(f"✓ Table validation passed: {table_path}")
+            return {"valid": True, "warnings": []}
+
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.warning(f"Could not validate table (proceeding with caution): {e}")
+            return {"valid": True, "warnings": [f"Validation incomplete: {e}"]}
+
+    def _convert_to_iceberg_query(self, sql: str, config: ConnectionConfig) -> str:
+        """
+        Convert read_parquet() calls to iceberg_scan() calls.
+
+        Detects:
+        - read_parquet('s3://bucket/path/**/*.parquet')
+
+        Converts to:
+        - iceberg_scan('s3://bucket/path') OR
+        - SELECT * FROM iceberg_catalog.namespace.table
+        """
+        import re
+
+        # Pattern: read_parquet('s3://...**/*.parquet')
+        parquet_pattern = r"read_parquet\(['\"]s3://([^/]+)/([^'\"]+?)/?\*?\*?/?\*?\.parquet['\"]\)"
+
+        def replace_with_iceberg(match):
+            bucket = match.group(1)
+            path = match.group(2).rstrip('/*')
+
+            if config.catalogType == "rest":
+                # Use catalog table reference
+                # Assumes table name is last path component
+                table_name = path.split('/')[-1]
+                return f"iceberg_catalog.{config.namespace}.{table_name}"
+            else:
+                # Direct iceberg_scan
+                iceberg_path = f"s3://{bucket}/{path}"
+                return f"iceberg_scan('{iceberg_path}')"
+
+        converted_sql = re.sub(parquet_pattern, replace_with_iceberg, sql, flags=re.IGNORECASE)
+
+        if converted_sql != sql:
+            logger.info(f"Converted query from read_parquet to Iceberg:")
+            logger.info(f"  Original: {sql[:100]}...")
+            logger.info(f"  Converted: {converted_sql[:100]}...")
+
+        return converted_sql
+
     def test_connection(self, config: ConnectionConfig) -> bool:
         """Test if the connection configuration works."""
         try:
+            # Clean up table path if needed
+            if config.tablePath:
+                # Remove trailing slash if present
+                if config.tablePath.endswith('/'):
+                    config.tablePath = config.tablePath.rstrip('/')
+                    logger.info(f"Cleaned table path (removed trailing slash): {config.tablePath}")
+
+                # Remove /metadata suffix if present
+                if config.tablePath.endswith('/metadata'):
+                    config.tablePath = config.tablePath[:-9]
+                    logger.info(f"Cleaned table path (removed /metadata): {config.tablePath}")
+
             self._apply_s3_config(config)
 
-            # Try a simple test query
-            if config.storageType == "minio" and "localhost" in config.endpoint:
-                # For our demo setup, test our movies bucket with simple wildcard
-                test_query = "SELECT COUNT(*) FROM read_parquet('s3://movies/data/**/*.parquet') LIMIT 1"
+            # Test Iceberg-specific connectivity
+            if config.catalogType == "rest":
+                # Test catalog access
+                test_query = f"SHOW TABLES FROM iceberg_catalog.{config.namespace}"
+            elif config.tablePath:
+                # For direct table access, try to read version hint first to help DuckDB
+                try:
+                    version_hint = self.connection.execute(
+                        f"SELECT * FROM read_text('{config.tablePath}/metadata/version-hint.text')"
+                    ).fetchone()
+                    if version_hint:
+                        logger.info(f"Found version hint: {version_hint[0]}")
+                except Exception as e:
+                    logger.warning(f"Could not read version-hint.text: {e}")
+
+                # Test direct table access
+                test_query = f"SELECT COUNT(*) FROM iceberg_scan('{config.tablePath}') LIMIT 1"
             else:
-                # For external endpoints, we'd need a valid path from the user
-                # For now, just verify the configuration was applied
-                test_query = "SELECT 1"
+                # For demo MinIO setup, test with Iceberg scan
+                test_query = "SELECT COUNT(*) FROM iceberg_scan('s3://movies/warehouse/demo/movies') LIMIT 1"
 
             result = self.connection.execute(test_query).fetchone()
             logger.info(f"✓ Connection test successful: {result}")
@@ -176,12 +319,19 @@ class DuckDBManager:
             # Apply S3 configuration
             self._apply_s3_config(config)
 
+            # Validate table if using direct path
+            if config.tablePath:
+                self._validate_iceberg_table(config.tablePath)
+
             # Enable profiling to get execution stats
             self.connection.execute("PRAGMA enable_profiling=json")
             self.connection.execute("PRAGMA profiling_output='query_profile.json'")
 
             # Sanitize and limit the query
             limited_sql = self._limit_query(sql, row_limit)
+
+            # Convert to Iceberg query
+            limited_sql = self._convert_to_iceberg_query(limited_sql, config)
 
             logger.info(f"Executing full query: {limited_sql}")
             logger.info(f"Connection config: {config.storageType}, endpoint: {config.endpoint}")
@@ -195,13 +345,11 @@ class DuckDBManager:
 
             # Calculate stats (simplified for now)
             bytes_scanned = len(str(rows)) * 2  # Rough estimate
-            estimated_cost = bytes_scanned * 0.000005  # $5 per TB estimate
 
             stats = QueryStats(
                 executionTimeMs=execution_time,
                 bytesScanned=bytes_scanned,
-                rowsReturned=len(rows),
-                estimatedCost=estimated_cost
+                rowsReturned=len(rows)
             )
 
             # Check if results were truncated
@@ -303,7 +451,19 @@ async def test_connection(request: TestConnectionRequest):
         success = db_manager.test_connection(request.connection)
 
         if success:
-            return {"status": "success", "message": "Connection successful"}
+            # Get table info to show in the UI
+            table_info = None
+            if request.connection.tablePath:
+                table_info = {
+                    "path": request.connection.tablePath,
+                    "suggestedQuery": f"SELECT * FROM iceberg_scan('{request.connection.tablePath}') LIMIT 10"
+                }
+
+            return {
+                "status": "success",
+                "message": "Connection successful",
+                "tableInfo": table_info
+            }
         else:
             raise HTTPException(status_code=400, detail="Connection test failed")
 
