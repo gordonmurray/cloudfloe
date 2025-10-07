@@ -35,8 +35,14 @@
                 </div>
 
                 <div class="form-group">
-                    <label for="endpoint">Endpoint</label>
-                    <input type="text" id="endpoint" placeholder="s3://bucket/path or R2 endpoint">
+                    <label for="endpoint">AWS S3 Endpoint</label>
+                    <input type="text" id="endpoint" placeholder="s3.amazonaws.com (leave blank for default)">
+                </div>
+
+                <div class="form-group">
+                    <label for="tablePath">Table Path</label>
+                    <input type="text" id="tablePath" placeholder="s3://bucket/warehouse/db/table">
+                    <small style="color: #6b7280; font-size: 0.875rem;">Path to Iceberg table root</small>
                 </div>
 
                 <div class="form-group">
@@ -112,10 +118,6 @@
                         <div class="stat-card">
                             <div class="stat-label">Bytes Scanned</div>
                             <div class="stat-value" id="bytesScanned">-</div>
-                        </div>
-                        <div class="stat-card">
-                            <div class="stat-label">Estimated Cost</div>
-                            <div class="stat-value" id="estCost">-</div>
                         </div>
                         <div class="stat-card">
                             <div class="stat-label">Rows Returned</div>
