@@ -41,7 +41,7 @@ Cloudfloe is **DuckDB-as-a-service** for Apache Iceberg data lakes.
 
 ---
 
-## ✨ Current Features (Phase 1)
+## ✨ Current Features
 
 | Feature | Description |
 |---------|-------------|
@@ -197,7 +197,7 @@ If these work, Cloudfloe will work too.
 
 ### ❌ Not Yet Supported:
 - **Row-level deletes** — Tables with position or equality deletes will be rejected
-- **Write operations** — Read-only for now (writes planned for Phase 2)
+- **Write operations** — Read-only for now
 - **REST Catalog** — Direct S3 path access only
 - **Schema evolution** — Reads current schema, doesn't handle complex migrations
 
