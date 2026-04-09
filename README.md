@@ -1,65 +1,58 @@
-# 🌊 Cloudfloe
+# Cloudfloe
 
 **Query your Apache Iceberg data lake in seconds. No clusters. No ops. Just SQL.**
 
 ![Cloudfloe Screenshot](images/cloudfloe_scrrenshot.png)
 
-## ⚡ The Problem
+## The Problem
 
-You have data in Apache Iceberg. You just want to **query it correctly**.
+You have data in Apache Iceberg. You just want to query it.
 
 But here's what you face:
 
-- **Trino/Presto**: Heavy clusters, complex setup, operational overhead
-- **AWS Athena**: Vendor lock-in, slower iteration, costs add up
-- **Local DuckDB**: Works great solo, painful to share and collaborate
-- **Spark**: Overkill for exploratory queries, slow startup
-- **Direct Parquet reads**: Fast but **dangerous** — bypasses Iceberg metadata, can return deleted rows
+- **Trino/Presto** — Heavy clusters, complex setup, operational overhead
+- **AWS Athena** — Vendor lock-in, slower iteration, costs add up
+- **Local DuckDB** — Works great solo, painful to share and collaborate
+- **Spark** — Overkill for exploratory queries, slow startup
+- **Direct Parquet reads** — Fast but dangerous: bypasses Iceberg metadata, can return deleted rows
 
-**You don't need a hammer when you need a magnifying glass.**
-
----
-
-## 💡 The Solution: Cloudfloe
-
-Cloudfloe is **DuckDB-as-a-service** for Apache Iceberg data lakes.
-
-### What it does:
-- 🧊 **Reads Iceberg correctly** — uses metadata layer, validates snapshots
-- 🚀 **Instant queries** on S3, R2, or MinIO — no data movement
-- 🌐 **Browser-based SQL editor** — no CLI, no local setup
-- 🔓 **Zero lock-in** — you own the data, we just query it
-- ⚡ **Sub-second startup** — no cluster spin-up time
-
-### What it doesn't do:
-- ❌ Store your data (you keep it where it is)
-- ❌ Require infrastructure changes (just S3 credentials)
-- ❌ Support write operations (read-only by design)
-- ❌ Handle tables with row-level deletes (append-only Iceberg v1/v2 only)
-
-**Think of it as**: A collaborative, web-based scratchpad for your Iceberg data lake.
+You don't need a hammer when you need a magnifying glass.
 
 ---
 
-## ✨ Current Features
+## What Cloudfloe Does
+
+Cloudfloe is a lightweight, browser-based SQL interface for Apache Iceberg data lakes, powered by DuckDB.
+
+- **Reads Iceberg correctly** — uses the metadata layer, validates snapshots
+- **Instant queries** on S3, R2, or MinIO — no data movement
+- **Browser-based SQL editor** — no CLI, no local setup
+- **Zero lock-in** — your data stays where it is
+- **Sub-second startup** — no cluster spin-up time
+- **Read-only by design** — query, don't mutate
+
+Think of it as a web-based scratchpad for your Iceberg data lake.
+
+---
+
+## Features
 
 | Feature | Description |
 |---------|-------------|
-| 🧊 **Iceberg Native** | Reads via `iceberg_scan()` — respects Iceberg metadata and snapshots |
-| ✅ **Table Validation** | Auto-detects row-level deletes and rejects unsafe tables |
-| 🔌 **Multi-Cloud Support** | AWS S3, Cloudflare R2, MinIO — any S3-compatible storage |
-| 🖥️ **Web SQL Editor** | Syntax highlighting, query history, sample queries |
-| 📊 **Instant Results** | DuckDB 1.4.1 engine, no cluster warmup, sub-second queries |
-| 🔒 **Read-Only by Design** | No destructive operations — query, don't mutate |
-| 🐳 **Docker Ready** | One command to run locally, no complex setup |
+| **Iceberg Native** | Reads via `iceberg_scan()` — respects metadata and snapshots |
+| **Table Validation** | Auto-detects row-level deletes and rejects unsafe tables |
+| **Multi-Cloud** | AWS S3, Cloudflare R2, MinIO — any S3-compatible storage |
+| **Web SQL Editor** | Syntax highlighting, query history, sample queries |
+| **Query Stats** | Execution time, bytes scanned, rows returned |
+| **Docker Ready** | One command to run locally |
 
 ---
 
-## 🚀 Quick Start
+## Quick Start
 
 ### Prerequisites
-- Docker & Docker Compose
-- S3-compatible storage with Iceberg table (or use our demo data)
+- Docker and Docker Compose
+- S3-compatible storage with an Iceberg table (or use the included demo data)
 
 ### 1. Start Cloudfloe
 ```bash
@@ -68,28 +61,27 @@ cd cloudfloe
 docker compose up --build
 ```
 
-Wait ~30 seconds for initialization, then open **http://localhost:3000**
+Wait about 30 seconds for initialization, then open **http://localhost:3000**
 
 ### 2. Connect to Your Iceberg Table
 
-In the UI Connection panel, enter:
+In the Connection panel, enter your details:
 
-**AWS S3 Example:**
 ```
-Storage Type: AWS S3
-AWS S3 Endpoint: s3.amazonaws.com (or leave blank for default)
-Table Path: s3://your-bucket/warehouse/db/table_name
-Access Key: AKIAIOSFODNN7EXAMPLE
-Secret Key: wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY
-Region: us-east-1
+Storage Type:  AWS S3
+Endpoint:      s3.amazonaws.com (or leave blank for default)
+Table Path:    s3://your-bucket/warehouse/db/table_name
+Access Key:    your-access-key
+Secret Key:    your-secret-key
+Region:        us-east-1
 ```
 
-**Important Notes:**
-- **Table Path** should point to the Iceberg table root (where `/metadata` folder is located)
-- Do NOT include `/metadata` in the path — Cloudfloe adds it automatically
+**Notes:**
+- Table Path should point to the Iceberg table root (where the `/metadata` folder is located)
+- Do not include `/metadata` in the path — Cloudfloe adds it automatically
 - Trailing slashes are automatically removed
 
-Click **"Test Connection"** — if successful, a sample query will appear in the editor.
+Click **Test Connection** — if successful, a sample query will appear in the editor.
 
 ### 3. Run Your First Query
 
@@ -99,18 +91,18 @@ After connection succeeds, a query like this will be auto-loaded:
 SELECT * FROM iceberg_scan('s3://your-bucket/warehouse/db/table_name') LIMIT 10;
 ```
 
-Just click **"Run Query"** to see your data!
+Click **Run Query** to see your data.
 
 ---
 
-## 📖 Querying Iceberg Tables
+## Query Examples
 
 ### Basic Query
 ```sql
 SELECT * FROM iceberg_scan('s3://bucket/warehouse/db/table_name') LIMIT 100;
 ```
 
-### With Filters
+### Filtering
 ```sql
 SELECT user_id, event_type, timestamp
 FROM iceberg_scan('s3://bucket/warehouse/events/user_events')
@@ -135,15 +127,15 @@ ORDER BY day DESC;
 -- View table snapshots
 SELECT * FROM iceberg_snapshots('s3://bucket/warehouse/db/table_name');
 
--- View table metadata (manifests, partitions, etc)
+-- View manifests and partitions
 SELECT * FROM iceberg_metadata('s3://bucket/warehouse/db/table_name');
 ```
 
 ---
 
-## 🔐 Setting Up S3 Access
+## S3 Access Setup
 
-### IAM Policy for AWS S3
+### IAM Policy
 
 Your AWS credentials need these permissions:
 
@@ -166,92 +158,69 @@ Your AWS credentials need these permissions:
 }
 ```
 
-**Minimum required:**
-- `s3:ListBucket` — To list files in `/metadata` directory
-- `s3:GetObject` — To read metadata and data files
+### Verify Access
 
-### Testing Access
-
-Before using Cloudfloe, verify access with AWS CLI:
+Before using Cloudfloe, confirm your credentials work:
 
 ```bash
-# Test 1: Can you list the metadata directory?
 aws s3 ls s3://your-bucket/warehouse/db/table_name/metadata/
-
-# Test 2: Can you read the version hint?
 aws s3 cp s3://your-bucket/warehouse/db/table_name/metadata/version-hint.text -
 ```
 
-If these work, Cloudfloe will work too.
+If these work, Cloudfloe will too.
 
 ---
 
-## 🛡️ Important Limitations
+## Limitations
 
-### ✅ Supported:
+**Supported:**
 - Iceberg v1 and v2 table formats
 - Append-only tables (no deletes)
 - Parquet data files
-- Time travel queries (via snapshots)
-- Partition pruning (DuckDB handles this)
+- Time travel queries via snapshots
+- Partition pruning
 
-### ❌ Not Yet Supported:
-- **Row-level deletes** — Tables with position or equality deletes will be rejected
-- **Write operations** — Read-only for now
-- **REST Catalog** — Direct S3 path access only
-- **Schema evolution** — Reads current schema, doesn't handle complex migrations
+**Not yet supported:**
+- Row-level deletes (position or equality deletes) — tables with deletes will be rejected
+- Write operations — read-only for now
+- REST Catalog — direct S3 path access only
+- Complex schema evolution
 
-**If your table has deletes**, you'll see:
+If your table has deletes, compact it first using Spark, Trino, or the Iceberg CLI before querying with Cloudfloe.
+
+---
+
+## Architecture
+
 ```
-Error: Table contains row-level deletes which are not supported.
-This application only supports append-only Iceberg v1/v2 tables.
-```
-
-**Solution:** Compact your table first:
-```sql
--- In Spark/Trino/Iceberg CLI:
-CALL compact_table('your_table');
++-----------------+
+|   Frontend      |  Nginx + HTML/CSS/JS
+|  (Port 3000)    |  CodeMirror SQL Editor
++--------+--------+
+         |
+         v  HTTP
++--------+--------+
+|   Backend       |  FastAPI + Python
+|  (Port 8000)    |  DuckDB 1.4.1 + Iceberg Extension
++--------+--------+
+         |
+         v  S3 API
++--------+--------+
+|   S3 Storage    |  AWS S3 / R2 / MinIO
+|                 |  Iceberg table (metadata + data)
++-----------------+
 ```
 
 ---
 
-## 🏗️ Architecture
+## Local Development
 
-```
-┌─────────────────┐
-│   Frontend      │  ← Nginx + HTML/CSS/JS
-│  (Port 3000)    │     CodeMirror SQL Editor
-└────────┬────────┘
-         │
-         ↓ HTTP
-┌─────────────────┐
-│   Backend       │  ← FastAPI + Python
-│  (Port 8000)    │     DuckDB 1.4.1 + Iceberg Extension
-└────────┬────────┘
-         │
-         ↓ S3 API
-┌─────────────────┐
-│   S3 Storage    │  ← AWS S3 / R2 / MinIO
-│                 │     Iceberg table (metadata + data)
-└─────────────────┘
-```
-
-**Key Components:**
-- **DuckDB 1.4.1**: Query engine with native Iceberg support
-- **Iceberg Extension**: Reads Iceberg metadata and manifests
-- **FastAPI**: REST API for query execution and connection testing
-- **HTTPFS Extension**: S3-compatible storage access
-
----
-
-## 🧪 Local Development
-
-### Run with Docker Compose (Recommended)
+### Docker Compose (recommended)
 ```bash
 docker compose up --build
 ```
 
-### Run Backend Manually
+### Backend manually
 ```bash
 cd backend
 python3 -m venv venv
@@ -262,32 +231,10 @@ uvicorn main:app --reload
 
 Backend runs on http://localhost:8000
 
-### Run Frontend Manually
+### Frontend manually
 ```bash
 cd frontend
 python3 -m http.server 3000
 ```
 
 Frontend runs on http://localhost:3000
-
----
-
-## 📊 Query Stats
-
-After running a query, click the **"Query Stats"** tab to see:
-
-- **Execution Time**: How long the query took (milliseconds)
-- **Bytes Scanned**: Approximate data size processed
-- **Rows Returned**: Number of rows in the result set
-
-Note: Bytes scanned is a rough estimate based on returned data, not actual S3 bytes read.
-
----
-
-## 🤝 Contributing
-
-Cloudfloe is in active development. Contributions welcome!
-
-## 💬 Questions?
-
-Open an issue on GitHub for bugs or feature requests
