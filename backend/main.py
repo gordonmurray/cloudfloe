@@ -11,6 +11,9 @@ import time
 from contextlib import asynccontextmanager
 from typing import Any, List, Literal, Optional
 
+import sqlglot
+from sqlglot import exp
+
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field, field_validator
@@ -19,6 +22,91 @@ import uvicorn
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+
+# --- SQL validation ---------------------------------------------------------
+# The submitted SQL is parsed with sqlglot (DuckDB dialect) and rejected
+# unless it is a single read-only query. This replaces the previous
+# substring-based keyword check, which both over-blocked legitimate queries
+# (e.g. `SELECT * FROM update_log`) and could be bypassed with comments or
+# unusual whitespace.
+
+_ALLOWED_TOP_LEVEL = (
+    exp.Select,
+    exp.With,
+    exp.Union,
+    exp.Intersect,
+    exp.Except,
+    exp.Values,
+)
+
+_FORBIDDEN_NODES = (
+    exp.Insert,
+    exp.Update,
+    exp.Delete,
+    exp.Create,
+    exp.Drop,
+    exp.Alter,
+    exp.TruncateTable,
+    exp.Commit,
+    exp.Rollback,
+    exp.Transaction,
+    exp.Use,
+    exp.Attach,
+    exp.Detach,
+    exp.Merge,
+    exp.Copy,
+    exp.Command,
+)
+
+
+def _validate_and_limit_sql(sql: str, row_limit: int) -> str:
+    """Parse ``sql`` and return a normalised, read-only query with an outer
+    ``LIMIT`` applied if one is not already present.
+
+    Raises ``HTTPException(400)`` on empty input, parse failures,
+    multi-statement input, or any non-SELECT top-level or nested
+    side-effecting operation.
+    """
+    if not sql or not sql.strip():
+        raise HTTPException(status_code=400, detail="Empty query")
+
+    try:
+        parsed = sqlglot.parse(sql, dialect="duckdb")
+    except sqlglot.errors.ParseError as e:
+        raise HTTPException(status_code=400, detail=f"Invalid SQL: {e}") from None
+
+    statements = [stmt for stmt in parsed if stmt is not None]
+    if len(statements) != 1:
+        raise HTTPException(
+            status_code=400,
+            detail="Only a single SQL statement is allowed",
+        )
+    stmt = statements[0]
+
+    if not isinstance(stmt, _ALLOWED_TOP_LEVEL):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Only SELECT queries are allowed (got {type(stmt).__name__.upper()})",
+        )
+
+    for node in stmt.walk():
+        if isinstance(node, _FORBIDDEN_NODES):
+            raise HTTPException(
+                status_code=400,
+                detail=f"{type(node).__name__.upper()} statements are not allowed",
+            )
+
+    # Inject an outer LIMIT if the user didn't already supply one. Operates on
+    # a copy so we don't mutate the parsed AST (avoids side effects if callers
+    # keep a reference).
+    stmt = stmt.copy()
+    target = stmt.this if isinstance(stmt, exp.With) else stmt
+    if isinstance(target, (exp.Select, exp.Union, exp.Intersect, exp.Except)):
+        if not target.args.get("limit"):
+            target.set("limit", exp.Limit(expression=exp.Literal.number(row_limit)))
+
+    return stmt.sql(dialect="duckdb")
 
 
 # --- Input validation -------------------------------------------------------
@@ -428,17 +516,16 @@ class DuckDBManager:
             self.connection.execute("PRAGMA enable_profiling=json")
             self.connection.execute("PRAGMA profiling_output='query_profile.json'")
 
-            # Sanitize and limit the query
-            limited_sql = self._limit_query(sql, row_limit)
+            # Convert any legacy read_parquet() calls to iceberg_scan() first,
+            # then validate + LIMIT-inject the resulting SQL with sqlglot.
+            converted_sql = self._convert_to_iceberg_query(sql, config)
+            final_sql = _validate_and_limit_sql(converted_sql, row_limit)
 
-            # Convert to Iceberg query
-            limited_sql = self._convert_to_iceberg_query(limited_sql, config)
-
-            logger.info(f"Executing full query: {limited_sql}")
+            logger.info(f"Executing full query: {final_sql}")
             logger.info(f"Connection config: {config.storageType}, endpoint: {config.endpoint}")
 
             # Execute query
-            result = self.connection.execute(limited_sql)
+            result = self.connection.execute(final_sql)
             columns = [desc[0] for desc in result.description]
             rows = result.fetchall()
 
@@ -465,25 +552,14 @@ class DuckDBManager:
                 truncated=truncated
             )
 
+        except HTTPException:
+            # Validation and other deliberate 400s already carry a useful
+            # detail string — re-raise unchanged rather than wrapping.
+            raise
         except Exception as e:
             execution_time = int((time.time() - start_time) * 1000)
             logger.error(f"Query failed after {execution_time}ms: {e}")
             raise HTTPException(status_code=400, detail=f"Query execution failed: {e}")
-
-    def _limit_query(self, sql: str, limit: int) -> str:
-        """Add LIMIT clause to query if not present."""
-        sql = sql.strip()
-
-        # Remove trailing semicolon
-        if sql.endswith(';'):
-            sql = sql[:-1]
-
-        # Check if LIMIT already exists (simple check)
-        if 'LIMIT' not in sql.upper():
-            sql += f" LIMIT {limit}"
-
-        return sql
-
 
 # Global DuckDB manager
 db_manager = None
@@ -579,27 +655,13 @@ async def test_connection(request: TestConnectionRequest):
 async def execute_query(request: QueryRequest):
     """Execute SQL query against data source."""
     try:
-        # Validate query (basic checks)
-        if not request.sql.strip():
-            raise HTTPException(status_code=400, detail="Empty query")
-
-        # Prevent destructive operations
-        dangerous_keywords = ["DELETE", "DROP", "INSERT", "UPDATE", "CREATE", "ALTER"]
-        sql_upper = request.sql.upper()
-        for keyword in dangerous_keywords:
-            if keyword in sql_upper:
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"Destructive operation '{keyword}' not allowed"
-                )
-
-        # Execute query
+        # SQL is validated + LIMIT-injected inside execute_query via
+        # _validate_and_limit_sql. Keep the route thin.
         result = db_manager.execute_query(
             request.sql,
             request.connection,
-            request.rowLimit
+            request.rowLimit,
         )
-
         return result
 
     except HTTPException:
