@@ -8,9 +8,9 @@ import logging
 import os
 import time
 from contextlib import asynccontextmanager
-from typing import Dict, List, Optional, Any
+from typing import List, Optional, Any
 
-from fastapi import FastAPI, HTTPException, BackgroundTasks
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 import uvicorn
@@ -259,7 +259,7 @@ class DuckDBManager:
         converted_sql = re.sub(parquet_pattern, replace_with_iceberg, sql, flags=re.IGNORECASE)
 
         if converted_sql != sql:
-            logger.info(f"Converted query from read_parquet to Iceberg:")
+            logger.info("Converted query from read_parquet to Iceberg:")
             logger.info(f"  Original: {sql[:100]}...")
             logger.info(f"  Converted: {converted_sql[:100]}...")
 
