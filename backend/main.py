@@ -521,42 +521,6 @@ async def get_demo_connection():
     }
 
 
-@app.get("/api/debug/test-direct")
-async def test_direct_duckdb():
-    """Test DuckDB S3 directly without using the manager class."""
-    try:
-        # Create a fresh connection exactly like the working debug script
-        conn = duckdb.connect(":memory:")
-
-        # Install and load extensions
-        conn.execute("INSTALL httpfs")
-        conn.execute("LOAD httpfs")
-
-        # Configure S3 for MinIO exactly as in working debug script
-        conn.execute("SET s3_endpoint='minio:9000'")
-        conn.execute("SET s3_url_style='path'")
-        conn.execute("SET s3_use_ssl=false")
-        conn.execute("SET s3_region='us-east-1'")
-        conn.execute("SET s3_access_key_id='cloudfloe'")
-        conn.execute("SET s3_secret_access_key='cloudfloe123'")
-
-        # Test the query
-        result = conn.execute("SELECT COUNT(*) FROM read_parquet('s3://movies/data/**/*.parquet') LIMIT 1").fetchone()
-        conn.close()
-
-        return {
-            "status": "success",
-            "count": result[0],
-            "message": "Direct DuckDB connection works!"
-        }
-
-    except Exception as e:
-        return {
-            "status": "error",
-            "message": str(e)
-        }
-
-
 @app.get("/api/demo/queries")
 async def get_demo_queries():
     """Get sample queries for demo dataset."""
