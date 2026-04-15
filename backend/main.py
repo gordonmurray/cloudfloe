@@ -82,7 +82,7 @@ class DuckDBManager:
                 self.connection.execute("LOAD iceberg")
                 # DuckDB 1.4+ requires explicit version handling
                 self.connection.execute("SET unsafe_enable_version_guessing=true")
-                logger.info("✓ Iceberg extension loaded")
+                logger.info("Iceberg extension loaded")
             except Exception as e:
                 logger.error(f"FATAL: Iceberg extension required but not available: {e}")
                 raise RuntimeError("Iceberg extension is required for correct data reads")
@@ -91,7 +91,7 @@ class DuckDBManager:
             self.connection.execute("SET memory_limit='2GB'")
             self.connection.execute("SET threads=4")
 
-            logger.info("✓ DuckDB initialized successfully")
+            logger.info("DuckDB initialized successfully")
 
         except Exception as e:
             logger.error(f"Failed to setup DuckDB: {e}")
@@ -153,7 +153,7 @@ class DuckDBManager:
             if config.sessionToken:
                 self.connection.execute(f"SET s3_session_token='{config.sessionToken}'")
 
-            logger.info(f"✓ Applied {config.storageType} configuration")
+            logger.info(f"Applied {config.storageType} configuration")
 
             # Attach Iceberg catalog if configured
             self._attach_iceberg_catalog(config)
@@ -191,7 +191,7 @@ class DuckDBManager:
                 )
             """)
 
-            logger.info("✓ Iceberg catalog attached")
+            logger.info("Iceberg catalog attached")
 
     def _validate_iceberg_table(self, table_path: str) -> dict:
         """
@@ -217,7 +217,7 @@ class DuckDBManager:
                     )
                 )
 
-            logger.info(f"✓ Table validation passed: {table_path}")
+            logger.info(f"Table validation passed: {table_path}")
             return {"valid": True, "warnings": []}
 
         except HTTPException:
@@ -304,7 +304,7 @@ class DuckDBManager:
                 test_query = "SELECT COUNT(*) FROM iceberg_scan('s3://movies/warehouse/demo/movies') LIMIT 1"
 
             result = self.connection.execute(test_query).fetchone()
-            logger.info(f"✓ Connection test successful: {result}")
+            logger.info(f"Connection test successful: {result}")
             return True
 
         except Exception as e:
@@ -355,7 +355,7 @@ class DuckDBManager:
             # Check if results were truncated
             truncated = len(rows) >= row_limit
 
-            logger.info(f"✓ Query completed: {len(rows)} rows in {execution_time}ms")
+            logger.info(f"Query completed: {len(rows)} rows in {execution_time}ms")
 
             return QueryResponse(
                 columns=columns,
@@ -394,9 +394,9 @@ async def lifespan(app: FastAPI):
     global db_manager
 
     # Startup
-    logger.info("🌊 Starting Cloudfloe backend...")
+    logger.info("Starting Cloudfloe backend...")
     db_manager = DuckDBManager()
-    logger.info("✓ Backend ready!")
+    logger.info("Backend ready!")
 
     yield
 

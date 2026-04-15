@@ -112,7 +112,7 @@ class CloudfloeApp {
                 // Mock response
                 await this.sleep(1000);
                 this.currentConnection = connection;
-                statusDiv.innerHTML = '<div class="status-message status-success">✓ Connection successful</div>';
+                statusDiv.innerHTML = '<div class="status-message status-success">Connection successful</div>';
                 this.addRecentConnection(connection);
             } else {
                 const response = await fetch(`${this.backendUrl}/api/connect/test`, {
@@ -124,7 +124,7 @@ class CloudfloeApp {
                 if (response.ok) {
                     const data = await response.json();
                     this.currentConnection = connection;
-                    statusDiv.innerHTML = '<div class="status-message status-success">✓ Connection successful</div>';
+                    statusDiv.innerHTML = '<div class="status-message status-success">Connection successful</div>';
                     this.addRecentConnection(connection);
 
                     // If we got table info, show it in the editor
@@ -137,7 +137,7 @@ class CloudfloeApp {
                 }
             }
         } catch (error) {
-            statusDiv.innerHTML = `<div class="status-message status-error">✗ ${error.message}</div>`;
+            statusDiv.innerHTML = `<div class="status-message status-error">${error.message}</div>`;
         }
     }
 

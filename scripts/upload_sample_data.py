@@ -27,9 +27,9 @@ def upload_sample_data(sample_dir='sample_data', bucket_name='movies'):
     # Create bucket
     try:
         s3_client.create_bucket(Bucket=bucket_name)
-        logger.info(f"✓ Created bucket: {bucket_name}")
+        logger.info(f"Created bucket: {bucket_name}")
     except s3_client.exceptions.BucketAlreadyOwnedByYou:
-        logger.info(f"✓ Bucket {bucket_name} already exists")
+        logger.info(f"Bucket {bucket_name} already exists")
     except Exception as e:
         logger.error(f"Failed to create bucket: {e}")
         raise
@@ -40,7 +40,7 @@ def upload_sample_data(sample_dir='sample_data', bucket_name='movies'):
         logger.error(f"Sample data directory not found: {sample_dir}")
         sys.exit(1)
 
-    logger.info(f"📤 Uploading sample data from {sample_dir}...")
+    logger.info(f"Uploading sample data from {sample_dir}...")
 
     file_count = 0
     total_size = 0
@@ -56,13 +56,13 @@ def upload_sample_data(sample_dir='sample_data', bucket_name='movies'):
         file_size = file_path.stat().st_size
         total_size += file_size
         file_count += 1
-        logger.info(f"  ✓ {s3_key} ({file_size / 1024:.1f} KB)")
+        logger.info(f"  {s3_key} ({file_size / 1024:.1f} KB)")
 
-    logger.info(f"\n🎉 Upload complete!")
+    logger.info("\nUpload complete!")
     logger.info(f"  Files: {file_count}")
     logger.info(f"  Total size: {total_size / 1024 / 1024:.1f} MB")
     logger.info(f"  Bucket: s3://{bucket_name}/")
-    logger.info(f"\n✨ Ready to query!")
+    logger.info("\nReady to query!")
     logger.info(f"  MinIO Console: http://localhost:9001")
     logger.info(f"  Credentials: cloudfloe / cloudfloe123")
     logger.info(f"  Sample query: SELECT * FROM read_parquet('s3://{bucket_name}/data/**/*.parquet')")
@@ -78,7 +78,7 @@ if __name__ == "__main__":
     try:
         upload_sample_data(sample_dir)
     except Exception as e:
-        logger.error(f"\n❌ Failed: {e}")
+        logger.error(f"\nFailed: {e}")
         import traceback
         traceback.print_exc()
         sys.exit(1)
