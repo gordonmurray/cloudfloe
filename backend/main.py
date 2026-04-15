@@ -403,9 +403,13 @@ def _validate_iceberg_table(conn: duckdb.DuckDBPyConnection, table_path: str) ->
             raise HTTPException(
                 status_code=400,
                 detail=(
-                    "Table contains row-level deletes which are not supported. "
-                    "This application only supports append-only Iceberg v1/v2 tables. "
-                    "Reading this table may return incorrect data."
+                    "Table has row-level deletes (position or equality). Cloudfloe "
+                    "reads would return rows the Iceberg metadata has marked removed, "
+                    "so the query is blocked rather than silently wrong. "
+                    "Compact the table first — Spark: "
+                    "`CALL system.rewrite_data_files('<catalog>.<db>.<table>')`; "
+                    "Trino: `ALTER TABLE <table> EXECUTE optimize`; "
+                    "Iceberg CLI: `iceberg rewrite_data_files`. Then retry."
                 ),
             )
 
