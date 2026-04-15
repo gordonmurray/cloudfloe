@@ -1,8 +1,11 @@
 # Sample Dataset
 
-This directory contains **37,537 IMDb movies** in partitioned Parquet format.
+This directory contains **37,537 IMDb movies** as a source for the demo
+Iceberg table. The local files are Hive-partitioned Parquet; on `docker
+compose up`, the init container reads them and writes an Apache Iceberg v2
+table to MinIO at `s3://movies/warehouse/demo/movies`.
 
-## Structure
+## Source layout (local)
 
 ```
 sample_data/data/
@@ -13,38 +16,35 @@ sample_data/data/
 └── decade=2010/titleType=movie/data.parquet
 ```
 
-## Dataset Details
+## Dataset details
 
-- **Format**: Partitioned Parquet (Iceberg-compatible)
-- **Partitions**: By decade and title type (20 partitions)
-- **Total Rows**: 37,537 movies and TV shows
-- **Total Size**: ~1.8 MB compressed
+- **Target format in MinIO**: Apache Iceberg v2 (written by pyiceberg)
+- **Local source format**: Hive-partitioned Parquet (by decade / titleType)
+- **Total rows**: 37,537 movies and TV shows
+- **Source size**: ~1.8 MB compressed
 - **Source**: IMDb title.basics dataset (sample)
 
 ## Columns
 
-- `tconst` - IMDb identifier
-- `titleType` - Type of title (movie, tvSeries, etc.)
-- `primaryTitle` - Popular title
-- `originalTitle` - Original title
-- `isAdult` - Adult content flag
-- `startYear` - Release year
-- `endYear` - End year (for TV series)
-- `runtimeMinutes` - Runtime in minutes
-- `genres` - Comma-separated genres
+- `tconst` — IMDb identifier
+- `titleType` — Type of title (movie, tvSeries, etc.)
+- `primaryTitle` — Popular title
+- `originalTitle` — Original title
+- `isAdult` — Adult content flag
+- `startYear` — Release year
+- `endYear` — End year (for TV series)
+- `runtimeMinutes` — Runtime in minutes
+- `genres` — Comma-separated genres
+- `decade` — Materialised from the Hive partition
+- `titleType` — Materialised from the Hive partition
 
 ## Usage
 
-This data is automatically loaded into MinIO when you run:
-
-```bash
-docker compose up -d
-```
-
-Then query it via DuckDB:
+The demo Iceberg table is seeded automatically by `docker compose up -d`.
+Query it via DuckDB:
 
 ```sql
-SELECT * FROM read_parquet('s3://movies/data/**/*.parquet') LIMIT 100;
+SELECT * FROM iceberg_scan('s3://movies/warehouse/demo/movies') LIMIT 100;
 ```
 
 ## About This Dataset
