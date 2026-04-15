@@ -1,5 +1,7 @@
 # Cloudfloe
 
+[![CI](https://github.com/gordonmurray/cloudfloe/actions/workflows/ci.yml/badge.svg)](https://github.com/gordonmurray/cloudfloe/actions/workflows/ci.yml)
+
 **Query your Apache Iceberg data lake in seconds. No clusters. No ops. Just SQL.**
 
 ![Cloudfloe Screenshot](images/cloudfloe_scrrenshot.png)
@@ -62,6 +64,8 @@ docker compose up --build
 ```
 
 Wait about 30 seconds for initialization, then open **http://localhost:3000**
+
+On first start, the bundled demo seeds a 37,537-row Iceberg table at `s3://movies/warehouse/demo/movies` in the local MinIO so you can query it immediately.
 
 ### 2. Connect to Your Iceberg Table
 
