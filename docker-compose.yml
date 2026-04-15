@@ -65,10 +65,10 @@ services:
     container_name: cloudfloe-backend
     ports:
       - "8000:8000"
-    environment:
-      - MINIO_ENDPOINT=minio:9000
-      - MINIO_ACCESS_KEY=cloudfloe
-      - MINIO_SECRET_KEY=cloudfloe123
+    # Query credentials arrive per-request in the API body and are only
+    # applied to a short-lived in-memory DuckDB session — they are never
+    # sourced from env vars or written to disk. See README → "Credential
+    # model" for the self-hosting pattern.
     depends_on:
       minio:
         condition: service_healthy

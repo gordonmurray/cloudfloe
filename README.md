@@ -20,7 +20,6 @@ But here's what you face:
 
 You don't need a hammer when you need a magnifying glass.
 
----
 
 ## What Cloudfloe Does
 
@@ -35,7 +34,6 @@ Cloudfloe is a lightweight, browser-based SQL interface for Apache Iceberg data 
 
 Think of it as a web-based scratchpad for your Iceberg data lake.
 
----
 
 ## Features
 
@@ -48,7 +46,6 @@ Think of it as a web-based scratchpad for your Iceberg data lake.
 | **Query Stats** | Execution time, bytes scanned, rows returned |
 | **Docker Ready** | One command to run locally |
 
----
 
 ## Quick Start
 
@@ -97,7 +94,6 @@ SELECT * FROM iceberg_scan('s3://your-bucket/warehouse/db/table_name') LIMIT 10;
 
 Click **Run Query** to see your data.
 
----
 
 ## Query Examples
 
@@ -135,7 +131,6 @@ SELECT * FROM iceberg_snapshots('s3://bucket/warehouse/db/table_name');
 SELECT * FROM iceberg_metadata('s3://bucket/warehouse/db/table_name');
 ```
 
----
 
 ## S3 Access Setup
 
@@ -173,7 +168,25 @@ aws s3 cp s3://your-bucket/warehouse/db/table_name/metadata/version-hint.text -
 
 If these work, Cloudfloe will too.
 
----
+
+## Credential Model
+
+**User query credentials** are sent per-request in the API body, applied to a short-lived in-memory DuckDB session, and discarded when the connection closes. They are not:
+- read from environment variables
+- written to disk
+- logged
+- stored in a database
+
+That means a `docker inspect` on the backend container will not surface the S3 keys a user is querying with.
+
+**For self-hosted deployments**, we recommend the same discipline for any service-level credentials you add (e.g. upstream databases, metadata stores):
+
+- **Docker Swarm / Compose**: use [Docker secrets](https://docs.docker.com/engine/swarm/secrets/) with the `*_FILE` env var convention. Most upstream images (MinIO, Postgres, etc.) support it natively.
+- **Kubernetes**: mount a `Secret` as a file under `/run/secrets/` or a writable config dir.
+- **AWS**: prefer IAM roles for the compute layer (EC2 instance profile, ECS task role, EKS IRSA) over baking AKIAs into env vars.
+
+The bundled `docker-compose.yml` uses plain env vars for the demo MinIO (public credentials `cloudfloe` / `cloudfloe123`) — not because that's the right pattern for real data, but to keep `docker compose up` a single command. Don't copy the demo pattern for production storage.
+
 
 ## Limitations
 
@@ -192,7 +205,6 @@ If these work, Cloudfloe will too.
 
 If your table has deletes, compact it first using Spark, Trino, or the Iceberg CLI before querying with Cloudfloe.
 
----
 
 ## Troubleshooting
 
@@ -225,7 +237,6 @@ The probe couldn't read any Iceberg metadata at the path. Most common causes, ro
 
 Cloudfloe is read-only by design — the backend parses every query and rejects anything that isn't a single SELECT/WITH/UNION/VALUES statement. Rewrite the query as a SELECT, or use Spark / Trino / DuckDB CLI directly for write workloads.
 
----
 
 ## Architecture
 
@@ -248,7 +259,6 @@ Cloudfloe is read-only by design — the backend parses every query and rejects 
 +-----------------+
 ```
 
----
 
 ## Local Development
 
