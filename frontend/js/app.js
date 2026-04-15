@@ -76,19 +76,34 @@ class CloudfloeApp {
     updateConnectionFields(storageType) {
         const sessionTokenGroup = document.getElementById('sessionTokenGroup');
         const endpoint = document.getElementById('endpoint');
+        const accessKey = document.getElementById('accessKey');
+        const secretKey = document.getElementById('secretKey');
+        const tablePath = document.getElementById('tablePath');
+
+        // Only fill empty fields — never clobber a value the user typed.
+        const setIfEmpty = (el, value) => {
+            if (!el.value) el.value = value;
+        };
 
         switch(storageType) {
             case 's3':
                 sessionTokenGroup.style.display = 'block';
-                endpoint.placeholder = 's3://bucket/path/to/table';
+                endpoint.placeholder = 's3.amazonaws.com (leave blank for AWS default)';
                 break;
             case 'r2':
                 sessionTokenGroup.style.display = 'none';
-                endpoint.placeholder = 'https://account.r2.cloudflarestorage.com';
+                endpoint.placeholder = 'account-id.r2.cloudflarestorage.com';
                 break;
             case 'minio':
                 sessionTokenGroup.style.display = 'none';
                 endpoint.placeholder = 'http://localhost:9000';
+                // Pre-fill the bundled-demo MinIO defaults so the first-time
+                // path (pick MinIO → click Test Connection) just works.
+                // Mirrors GET /api/demo/connection.
+                setIfEmpty(endpoint, 'http://localhost:9000');
+                setIfEmpty(accessKey, 'cloudfloe');
+                setIfEmpty(secretKey, 'cloudfloe123');
+                setIfEmpty(tablePath, 's3://movies/warehouse/demo/movies');
                 break;
         }
     }
