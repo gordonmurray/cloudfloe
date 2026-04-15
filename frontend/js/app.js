@@ -124,13 +124,13 @@ class CloudfloeApp {
                 if (response.ok) {
                     const data = await response.json();
                     this.currentConnection = connection;
-                    statusDiv.innerHTML = '<div class="status-message status-success">Connection successful</div>';
                     this.addRecentConnection(connection);
 
-                    // If we got table info, show it in the editor
+                    statusDiv.innerHTML = '<div class="status-message status-success">Connection successful</div>' +
+                        this.renderTableInfo(data.tableInfo);
+
                     if (data.tableInfo && data.tableInfo.suggestedQuery) {
                         this.editor.setValue(data.tableInfo.suggestedQuery);
-                        statusDiv.innerHTML += `<div style="margin-top: 0.5rem; color: #10b981; font-size: 0.875rem;">Table found: ${data.tableInfo.path}<br>Sample query loaded in editor</div>`;
                     }
                 } else {
                     throw new Error('Connection failed');
@@ -138,6 +138,58 @@ class CloudfloeApp {
             }
         } catch (error) {
             statusDiv.innerHTML = `<div class="status-message status-error">${error.message}</div>`;
+        }
+    }
+
+    renderTableInfo(info) {
+        if (!info) return '';
+
+        const escape = (s) => String(s).replace(/[&<>"']/g, (c) => ({
+            '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+        }[c]));
+
+        const rows = [];
+        if (info.format) {
+            rows.push(['Format', escape(info.format)]);
+        }
+        if (typeof info.rows === 'number') {
+            rows.push(['Rows', info.rows.toLocaleString()]);
+        }
+        if (typeof info.files === 'number') {
+            rows.push(['Files', info.files.toLocaleString()]);
+        }
+        if (info.lastSnapshotAt) {
+            rows.push(['Last snapshot', this.formatRelativeTime(info.lastSnapshotAt)]);
+        }
+        if (info.hasDeletes === true) {
+            rows.push(['Deletes', '<span style="color:#dc2626">present — not supported</span>']);
+        }
+
+        if (!rows.length) {
+            return '';
+        }
+
+        const rowsHtml = rows.map(([k, v]) => `
+            <div class="table-info-row">
+                <span class="table-info-label">${k}</span>
+                <span class="table-info-value">${v}</span>
+            </div>
+        `).join('');
+
+        return `<div class="table-info">${rowsHtml}</div>`;
+    }
+
+    formatRelativeTime(iso) {
+        try {
+            const then = new Date(iso);
+            const secs = Math.floor((Date.now() - then.getTime()) / 1000);
+            if (!Number.isFinite(secs) || secs < 0) return iso;
+            if (secs < 60) return `${secs}s ago`;
+            if (secs < 3600) return `${Math.floor(secs / 60)}m ago`;
+            if (secs < 86400) return `${Math.floor(secs / 3600)}h ago`;
+            return `${Math.floor(secs / 86400)}d ago`;
+        } catch {
+            return iso;
         }
     }
 

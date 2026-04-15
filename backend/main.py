@@ -4,11 +4,13 @@ DuckDB-as-a-service for Iceberg data lakes
 """
 
 import duckdb
+import json
 import logging
 import os
 import re
 import time
 from contextlib import asynccontextmanager, contextmanager
+from datetime import datetime, timezone
 from typing import Any, List, Literal, Optional
 
 import sqlglot
@@ -239,6 +241,24 @@ class QueryResponse(BaseModel):
     truncated: bool = False
 
 
+class TableInfo(BaseModel):
+    """Structured metadata returned by a successful connection probe.
+
+    All Iceberg-specific fields are optional so the same model can describe
+    both the rich direct-table-path case and the thinner REST-catalog /
+    bundled-demo cases.
+    """
+
+    path: str
+    suggestedQuery: str
+    format: Optional[str] = None
+    rows: Optional[int] = None
+    files: Optional[int] = None
+    hasDeletes: Optional[bool] = None
+    snapshotId: Optional[str] = None
+    lastSnapshotAt: Optional[str] = None
+
+
 # --- DuckDB session management ---------------------------------------------
 # A fresh in-memory connection is opened per request, configured with the
 # caller's S3/Iceberg settings, and closed on exit. The previous design kept
@@ -425,45 +445,119 @@ def _convert_to_iceberg_query(sql: str, config: ConnectionConfig) -> str:
     return converted_sql
 
 
-def run_connection_test(config: ConnectionConfig) -> bool:
-    """Open a fresh connection, apply config, and try a single probe query."""
+def _probe_iceberg_table(
+    conn: duckdb.DuckDBPyConnection, table_path: str
+) -> TableInfo:
+    """Gather structured metadata about an Iceberg table.
+
+    Reads the latest ``*.metadata.json`` for format version + current
+    snapshot, then queries ``iceberg_metadata()`` for manifest-level row
+    and file counts. A single failed sub-probe degrades the returned
+    ``TableInfo`` rather than failing the whole connection test.
+    """
+    info = TableInfo(
+        path=table_path,
+        suggestedQuery=f"SELECT * FROM iceberg_scan('{table_path}') LIMIT 10",
+    )
+
+    # At least one of the two sub-probes must succeed — otherwise we have no
+    # evidence the path is a real Iceberg table and should let the caller
+    # (run_connection_test) treat it as a failed probe.
+    metadata_json_ok = False
+    iceberg_metadata_ok = False
+
+    # Latest metadata.json (glob + ORDER BY filename DESC works for both
+    # pyiceberg's `NNNNN-<uuid>.metadata.json` and Spark's `vN.metadata.json`
+    # naming). Contains format-version, current-snapshot-id, last-updated-ms.
+    try:
+        meta_row = conn.execute(
+            "SELECT content FROM read_text(?) ORDER BY filename DESC LIMIT 1",
+            [f"{table_path}/metadata/*.metadata.json"],
+        ).fetchone()
+        if meta_row and meta_row[0]:
+            meta = json.loads(meta_row[0])
+            metadata_json_ok = True
+            fmt = meta.get("format-version")
+            if fmt:
+                info.format = f"iceberg-v{fmt}"
+            snap_id = meta.get("current-snapshot-id")
+            if snap_id is not None:
+                # Snapshot IDs are 64-bit — stringify to avoid JS precision loss.
+                info.snapshotId = str(snap_id)
+            updated_ms = meta.get("last-updated-ms")
+            if isinstance(updated_ms, (int, float)):
+                info.lastSnapshotAt = (
+                    datetime.fromtimestamp(updated_ms / 1000, tz=timezone.utc)
+                    .isoformat()
+                    .replace("+00:00", "Z")
+                )
+    except Exception as e:
+        logger.warning(f"Could not read table metadata JSON for {table_path}: {e}")
+
+    # Manifest-level aggregate — rows, file count, delete detection.
+    try:
+        agg = conn.execute(
+            """
+            SELECT
+                COALESCE(SUM(record_count), 0)::BIGINT AS rows,
+                COUNT(*)::BIGINT AS files,
+                BOOL_OR(manifest_content <> 'DATA') AS has_deletes
+            FROM iceberg_metadata(?)
+            """,
+            [table_path],
+        ).fetchone()
+        if agg:
+            iceberg_metadata_ok = True
+            info.rows = int(agg[0]) if agg[0] is not None else None
+            info.files = int(agg[1]) if agg[1] is not None else None
+            info.hasDeletes = bool(agg[2]) if agg[2] is not None else None
+    except Exception as e:
+        logger.warning(f"Could not read iceberg_metadata for {table_path}: {e}")
+
+    if not (metadata_json_ok or iceberg_metadata_ok):
+        raise RuntimeError(
+            f"No Iceberg metadata readable at {table_path} — path may be wrong or credentials may lack access"
+        )
+
+    return info
+
+
+def run_connection_test(config: ConnectionConfig) -> Optional[TableInfo]:
+    """Open a fresh connection, apply config, and probe the target.
+
+    Returns a populated :class:`TableInfo` on success, ``None`` on failure.
+    Callers should treat ``None`` as a generic "couldn't reach / read the
+    table" signal — detailed reasons land in the logs rather than in the
+    return value so we don't leak backend internals to unauthenticated
+    callers.
+    """
     try:
         with _duckdb_connection(config) as conn:
             if config.catalogType == "rest":
                 # namespace is validated at ingress against a SQL identifier
                 # pattern, so this interpolation is safe.
-                result = conn.execute(
+                conn.execute(
                     f"SHOW TABLES FROM iceberg_catalog.{config.namespace}"
                 ).fetchone()
-            elif config.tablePath:
-                try:
-                    version_hint = conn.execute(
-                        "SELECT * FROM read_text(?)",
-                        [f"{config.tablePath}/metadata/version-hint.text"],
-                    ).fetchone()
-                    if version_hint:
-                        logger.info(f"Found version hint: {version_hint[0]}")
-                except Exception as e:
-                    logger.warning(f"Could not read version-hint.text: {e}")
+                return TableInfo(
+                    path=f"iceberg_catalog.{config.namespace}",
+                    suggestedQuery=f"SHOW TABLES FROM iceberg_catalog.{config.namespace}",
+                )
+            if config.tablePath:
+                return _probe_iceberg_table(conn, config.tablePath)
 
-                result = conn.execute(
-                    "SELECT COUNT(*) FROM iceberg_scan(?) LIMIT 1",
-                    [config.tablePath],
-                ).fetchone()
-            else:
-                # Demo MinIO setup (path is hardcoded, not user input)
-                result = conn.execute(
-                    "SELECT COUNT(*) FROM iceberg_scan('s3://movies/warehouse/demo/movies') LIMIT 1"
-                ).fetchone()
-
-            logger.info(f"Connection test successful: {result}")
-            return True
+            # Demo MinIO setup (path is hardcoded, not user input)
+            demo_path = "s3://movies/warehouse/demo/movies"
+            conn.execute(
+                f"SELECT COUNT(*) FROM iceberg_scan('{demo_path}') LIMIT 1"
+            ).fetchone()
+            return _probe_iceberg_table(conn, demo_path)
 
     except HTTPException:
         raise
     except Exception as e:
         logger.warning(f"Connection test failed: {e}")
-        return False
+        return None
 
 
 def run_query(
@@ -585,24 +679,24 @@ async def health():
 
 @app.post("/api/connect/test")
 async def test_connection(request: TestConnectionRequest):
-    """Test connection to data source."""
+    """Test connection to data source and return a diagnostic summary.
+
+    Successful responses include ``tableInfo`` with Iceberg metadata
+    (format version, current snapshot, row/file counts, delete flag)
+    so the UI can show users "yes, this is your table" instead of a
+    bare tick.
+    """
     try:
-        success = run_connection_test(request.connection)
+        table_info = run_connection_test(request.connection)
 
-        if success:
-            table_info = None
-            if request.connection.tablePath:
-                table_info = {
-                    "path": request.connection.tablePath,
-                    "suggestedQuery": f"SELECT * FROM iceberg_scan('{request.connection.tablePath}') LIMIT 10",
-                }
+        if table_info is None:
+            raise HTTPException(status_code=400, detail="Connection test failed")
 
-            return {
-                "status": "success",
-                "message": "Connection successful",
-                "tableInfo": table_info,
-            }
-        raise HTTPException(status_code=400, detail="Connection test failed")
+        return {
+            "status": "success",
+            "message": "Connection successful",
+            "tableInfo": table_info.model_dump(exclude_none=True),
+        }
 
     except HTTPException:
         raise
