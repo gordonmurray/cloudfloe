@@ -17,6 +17,25 @@ jobs:
           src: "./backend ./scripts"
           args: "check"
 
+  backend-tests:
+    name: Backend tests (pytest)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+      - name: Install backend dependencies
+        working-directory: backend
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      - name: Run pytest
+        working-directory: backend
+        run: pytest -v
+
   backend-docker:
     name: Build backend image
     runs-on: ubuntu-latest
