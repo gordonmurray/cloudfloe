@@ -131,23 +131,23 @@
             <div class="query-library">
                 <h3>Sample Queries</h3>
                 <div class="sample-queries" id="sampleQueries">
-                    <div class="query-card" data-query="SELECT primaryTitle, startYear, runtimeMinutes, genres FROM read_parquet('s3://movies/data/**/*.parquet') WHERE titleType = 'movie' ORDER BY startYear DESC LIMIT 10">
+                    <div class="query-card" data-query="SELECT primaryTitle, startYear, runtimeMinutes, genres FROM iceberg_scan('s3://movies/warehouse/demo/movies') WHERE titleType = 'movie' ORDER BY startYear DESC LIMIT 10">
                         <div class="query-title">Sample Movies</div>
                         <div class="query-desc">Preview first 10 movies</div>
                     </div>
-                    <div class="query-card" data-query="SELECT COUNT(*) as total_movies FROM read_parquet('s3://movies/data/**/*.parquet')">
+                    <div class="query-card" data-query="SELECT COUNT(*) as total_movies FROM iceberg_scan('s3://movies/warehouse/demo/movies')">
                         <div class="query-title">Row Count</div>
                         <div class="query-desc">Count total rows in dataset</div>
                     </div>
-                    <div class="query-card" data-query="SELECT decade, COUNT(*) as movie_count, AVG(runtimeMinutes) as avg_runtime FROM read_parquet('s3://movies/data/**/*.parquet') WHERE titleType = 'movie' AND runtimeMinutes IS NOT NULL GROUP BY decade ORDER BY decade DESC">
+                    <div class="query-card" data-query="SELECT decade, COUNT(*) as movie_count, AVG(runtimeMinutes) as avg_runtime FROM iceberg_scan('s3://movies/warehouse/demo/movies') WHERE titleType = 'movie' AND runtimeMinutes IS NOT NULL GROUP BY decade ORDER BY decade DESC">
                         <div class="query-title">Movies by Decade</div>
                         <div class="query-desc">Count movies by decade with avg runtime</div>
                     </div>
-                    <div class="query-card" data-query="SELECT primaryTitle, startYear, runtimeMinutes FROM read_parquet('s3://movies/data/**/*.parquet') WHERE titleType = 'movie' AND runtimeMinutes > 180 ORDER BY runtimeMinutes DESC LIMIT 10">
+                    <div class="query-card" data-query="SELECT primaryTitle, startYear, runtimeMinutes FROM iceberg_scan('s3://movies/warehouse/demo/movies') WHERE titleType = 'movie' AND runtimeMinutes > 180 ORDER BY runtimeMinutes DESC LIMIT 10">
                         <div class="query-title">Long Movies</div>
                         <div class="query-desc">Find movies over 3 hours</div>
                     </div>
-                    <div class="query-card" data-query="SELECT TRIM(genre) as genre, COUNT(*) as count FROM (SELECT UNNEST(string_split(genres, ',')) as genre FROM read_parquet('s3://movies/data/**/*.parquet') WHERE titleType = 'movie' AND genres IS NOT NULL) GROUP BY genre ORDER BY count DESC LIMIT 10">
+                    <div class="query-card" data-query="SELECT TRIM(genre) as genre, COUNT(*) as count FROM (SELECT UNNEST(string_split(genres, ',')) as genre FROM iceberg_scan('s3://movies/warehouse/demo/movies') WHERE titleType = 'movie' AND genres IS NOT NULL) GROUP BY genre ORDER BY count DESC LIMIT 10">
                         <div class="query-title">Popular Genres</div>
                         <div class="query-desc">Most common movie genres</div>
                     </div>

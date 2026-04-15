@@ -8,9 +8,9 @@ import logging
 import os
 import time
 from contextlib import asynccontextmanager
-from typing import Dict, List, Optional, Any
+from typing import List, Optional, Any
 
-from fastapi import FastAPI, HTTPException, BackgroundTasks
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 import uvicorn
@@ -259,7 +259,7 @@ class DuckDBManager:
         converted_sql = re.sub(parquet_pattern, replace_with_iceberg, sql, flags=re.IGNORECASE)
 
         if converted_sql != sql:
-            logger.info(f"Converted query from read_parquet to Iceberg:")
+            logger.info("Converted query from read_parquet to Iceberg:")
             logger.info(f"  Original: {sql[:100]}...")
             logger.info(f"  Converted: {converted_sql[:100]}...")
 
@@ -517,39 +517,40 @@ async def get_demo_connection():
         "accessKey": "cloudfloe",
         "secretKey": "cloudfloe123",
         "region": "us-east-1",
-        "samplePath": "s3://movies/data/**/*.parquet"
+        "tablePath": "s3://movies/warehouse/demo/movies"
     }
 
 
 @app.get("/api/demo/queries")
 async def get_demo_queries():
     """Get sample queries for demo dataset."""
+    demo_table = "s3://movies/warehouse/demo/movies"
     return {
         "queries": [
             {
                 "name": "Sample Movies",
                 "description": "Preview first 10 movies",
-                "sql": "SELECT primaryTitle, startYear, runtimeMinutes, genres FROM read_parquet('s3://movies/data/**/*.parquet') WHERE titleType = 'movie' ORDER BY startYear DESC"
+                "sql": f"SELECT primaryTitle, startYear, runtimeMinutes, genres FROM iceberg_scan('{demo_table}') WHERE titleType = 'movie' ORDER BY startYear DESC LIMIT 10"
             },
             {
                 "name": "Row Count",
                 "description": "Count total rows in dataset",
-                "sql": "SELECT COUNT(*) as total_movies FROM read_parquet('s3://movies/data/**/*.parquet')"
+                "sql": f"SELECT COUNT(*) as total_movies FROM iceberg_scan('{demo_table}')"
             },
             {
                 "name": "Movies by Decade",
                 "description": "Count movies by decade",
-                "sql": "SELECT decade, COUNT(*) as movie_count FROM read_parquet('s3://movies/data/**/*.parquet') WHERE titleType = 'movie' GROUP BY decade ORDER BY decade DESC"
+                "sql": f"SELECT decade, COUNT(*) as movie_count FROM iceberg_scan('{demo_table}') WHERE titleType = 'movie' GROUP BY decade ORDER BY decade DESC"
             },
             {
                 "name": "Long Movies",
                 "description": "Find movies over 3 hours",
-                "sql": "SELECT primaryTitle, startYear, runtimeMinutes FROM read_parquet('s3://movies/data/**/*.parquet') WHERE titleType = 'movie' AND runtimeMinutes > 180 ORDER BY runtimeMinutes DESC"
+                "sql": f"SELECT primaryTitle, startYear, runtimeMinutes FROM iceberg_scan('{demo_table}') WHERE titleType = 'movie' AND runtimeMinutes > 180 ORDER BY runtimeMinutes DESC"
             },
             {
                 "name": "Popular Genres",
                 "description": "Most common genres",
-                "sql": "SELECT TRIM(genre) as genre, COUNT(*) as count FROM (SELECT UNNEST(string_split(genres, ',')) as genre FROM read_parquet('s3://movies/data/**/*.parquet') WHERE titleType = 'movie' AND genres IS NOT NULL) GROUP BY genre ORDER BY count DESC"
+                "sql": f"SELECT TRIM(genre) as genre, COUNT(*) as count FROM (SELECT UNNEST(string_split(genres, ',')) as genre FROM iceberg_scan('{demo_table}') WHERE titleType = 'movie' AND genres IS NOT NULL) GROUP BY genre ORDER BY count DESC"
             }
         ]
     }
