@@ -52,8 +52,8 @@ services:
     command: >
       bash -c "
       echo 'Installing dependencies...' &&
-      pip install --no-cache-dir boto3 &&
-      echo 'Uploading sample data to MinIO...' &&
+      pip install --no-cache-dir boto3 'pyiceberg[pyarrow,s3fs,sql-sqlite]>=0.7.0,<1.0.0' &&
+      echo 'Seeding Iceberg demo table in MinIO...' &&
       python /scripts/upload_sample_data.py /sample_data
       "
     restart: "no"
