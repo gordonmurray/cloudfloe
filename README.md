@@ -85,7 +85,7 @@ Region:        us-east-1
 - Do not include `/metadata` in the path — Cloudfloe adds it automatically
 - Trailing slashes are automatically removed
 
-Click **Test Connection** — if successful, a sample query will appear in the editor.
+Click **Test Connection**. On success, the Connection panel shows the table's Iceberg format version, row count, file count, and last snapshot time — plus a sample query loaded into the editor.
 
 ### 3. Run Your First Query
 
@@ -191,6 +191,39 @@ If these work, Cloudfloe will too.
 - Complex schema evolution
 
 If your table has deletes, compact it first using Spark, Trino, or the Iceberg CLI before querying with Cloudfloe.
+
+---
+
+## Troubleshooting
+
+### "Table has row-level deletes" (400)
+
+Cloudfloe refuses to read tables with position or equality delete manifests — silently returning removed rows would break the "reads Iceberg correctly" promise. Compact the table first:
+
+- **Spark**: `CALL system.rewrite_data_files('<catalog>.<db>.<table>')`
+- **Trino**: `ALTER TABLE <table> EXECUTE optimize`
+- **Iceberg CLI**: `iceberg rewrite_data_files`
+
+Then re-run the query.
+
+### "Connection test failed" (400)
+
+The probe couldn't read any Iceberg metadata at the path. Most common causes, roughly in order:
+
+1. **Wrong table path.** Point at the table root (the directory containing `metadata/` and `data/`), not at `metadata/` itself. Trailing slashes and a trailing `/metadata` are stripped automatically, but a typo in the bucket or table name won't be.
+2. **Missing S3 permissions.** Cloudfloe needs `s3:ListBucket` on the bucket and `s3:GetObject` on everything under the table path. See [S3 Access Setup](#s3-access-setup). Verify with `aws s3 ls s3://your-bucket/warehouse/db/table_name/metadata/` — if that fails, Cloudfloe will too.
+3. **Wrong region.** The Region field must match the bucket's region (AWS S3). For MinIO and R2 the Region value is generally ignored but must still be set.
+4. **Wrong endpoint (R2 / MinIO).** Use the full endpoint hostname, without a scheme: `xxx.r2.cloudflarestorage.com`, not `https://xxx.r2.cloudflarestorage.com`.
+
+### Query is slow on a table I expected to be fast
+
+- **Lots of small files** — DuckDB can get sluggish past ~10,000 files. The Connection panel shows the file count after a successful probe; if it's high, compact the table.
+- **No partition filter** — `iceberg_scan()` reads all partitions unless your `WHERE` clause prunes them. Always include a partition column predicate on large tables.
+- **Cold extension** — the first query after starting the backend has to download and load the `httpfs` and `iceberg` DuckDB extensions. Subsequent queries are much faster.
+
+### "DROP/UPDATE/… statements are not allowed" (400)
+
+Cloudfloe is read-only by design — the backend parses every query and rejects anything that isn't a single SELECT/WITH/UNION/VALUES statement. Rewrite the query as a SELECT, or use Spark / Trino / DuckDB CLI directly for write workloads.
 
 ---
 
